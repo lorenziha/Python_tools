@@ -1,10 +1,7 @@
-from scipy.stats import uniform
-from scipy.stats import randint
-import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.lines as lines
 import pandas as pd
 import argparse
+
 
 # Process parameters
 
@@ -23,14 +20,6 @@ parser.add_argument(
     default="all.snpden",
 )
 parser.add_argument(
-    "-c",
-    "--chromosome",
-    help="tabulated file with chromosome_ID <tab> size (in bp)",
-    type=str,
-    required=True,
-    default="chromosome_size.txt",
-)
-parser.add_argument(
     "-o",
     "--output_prefix",
     help="output prefix",
@@ -38,103 +27,227 @@ parser.add_argument(
     required=False,
     default="all",
 )
-
+parser.add_argument(
+    "-p",
+    "--plot_type",
+    help="Plot type [1: snp_density+read-depth; \
+            2: norm_snp_density+read-depth; \
+            3: snp_density+read_coverage; \
+            4: snp_density+read-depth+read_coverage+median_snp_density_line]",
+    type=int,
+    required=False,
+    default=4,
+)
 args = parser.parse_args()
 input_file = args.input
 outputPrefix = args.output_prefix
-chr_size_file = args.chromosome
+plot_type = args.plot_type
+
 
 # Read snpden file
-snpden_df = pd.read_csv(input_file, sep="\t")
+df = pd.read_csv(input_file, sep="\t")
 prefix = str(input_file).replace(".snpden", "")
 prefix = prefix.replace("../", "")
-
-# Read chromosome size file
-chr_size_df = pd.read_csv(chr_size_file, sep="\t", header=None)
-
-# Add start and end fake snps with 0 cov for each chromosome so
-# they are plot in their entire lenght
-for idx in chr_size_df.index:
-    chr, size = [chr_size_df[0][idx], chr_size_df[1][idx]]
-    df2 = {"CHROM": chr, "BIN_START": 0, "SNP_COUNT": 0, "VARIANTS/KB": 0}
-    df3 = {
-        "CHROM": chr,
-        "BIN_START": size,
-        "SNP_COUNT": 0,
-        "VARIANTS/KB": 0,
-    }
-    snpden_df = snpden_df.append(df2, ignore_index=True)
-    snpden_df = snpden_df.append(df3, ignore_index=True)
-
-# print(snpden_df)
-
-snpden_df = snpden_df.sort_values(by=["CHROM", "BIN_START"], ascending=True)
-# print(snpden_df_sorted)
-
-# print(df)
-df = snpden_df
-# print(df)
-df.CHROM = df.CHROM.astype("category")
-df.CHROM = df.CHROM.cat.set_categories(list(set(df.CHROM)), ordered=True)
-myChromList = sorted(set(df.CHROM))
-
-# print(myChromList)
+df["IDX"] = df.index
 
 
-# How to gene vs -log10(pvalue)
-df["ind"] = range(len(df))
-df_grouped = df.groupby(("CHROM"))
-
-# for key, item in df_grouped:
-#    print(df_grouped.get_group(key), "\n\n")
-
-
-# Manhattan plot
-fig = plt.figure(figsize=(14, 2))  # set fig size
-ax = fig.add_subplot(111)
-colors = ["blue", "grey"]
+chrom_ids = sorted(set(df["CHROM"]))
+chrom_pos = []
 x_labels = []
 x_labels_pos = []
+for chr in chrom_ids:
+    xmax = max(df.loc[df["CHROM"] == chr, "IDX"])
+    xmin = min(df.loc[df["CHROM"] == chr, "IDX"])
+    xmean = int((xmax - xmin) / 2)
+    chrom_pos.append(max(df.loc[df["CHROM"] == chr, "IDX"]))
+    x_labels.append(chr)
+    x_labels_pos.append(xmin + xmean)
+
+
 if df["SNP_COUNT"].median() < 35:
     y_max = 35  # df["SNP_COUNT"].median() + (3 * df["SNP_COUNT"].std())
-    y_min = -15
 else:
     y_max = 700  # df["SNP_COUNT"].max() + 10
-    y_min = -15
 
-num = 0
-# for num, (name, group) in enumerate(df_grouped, ):
-for name in myChromList:
-    group = df_grouped.get_group(name)
-    # print(f"num= {num} ; name= {name} ; group = {group} ")
-    group.plot(
-        kind="scatter",
-        x="ind",
-        y="SNP_COUNT",
-        s=2,
-        color=colors[num % len(colors)],
-        ax=ax,
+if plot_type == 1:
+    fig, ax = plt.subplots(figsize=(24, 5))
+    ax2 = ax.twinx()
+    counter = 0
+    for chr in chrom_ids:
+        df2 = df.loc[df["CHROM"] == chr]
+        df2.plot(
+            x="IDX",
+            y="SNP_COUNT",
+            kind="scatter",
+            color=["blue", "black"][(counter % 2)],
+            ax=ax,
+            s=2,
+        )
+        counter = counter + 1
+
+    df.plot(
+        x="IDX",
+        y="COVERAGE",
+        kind="line",
+        color="green",
+        alpha=0.3,
+        ax=ax2,
+        legend=None,
     )
-    x_labels.append(name)
-    x_labels_pos.append(
-        (group["ind"].iloc[-1] - (group["ind"].iloc[-1] - group["ind"].iloc[0]) / 2)
+    ax.set_xmargin(0)
+    ax.set_ymargin(1)
+    ax.set_ylabel(f"{prefix}\nSNP Density / 10kb")
+    ax.set_ylim(0, y_max)
+    ax2.set_ylabel("Mean Read Depth / 10kb")
+    ax2.set_ylim(0, 200)
+    ax.vlines(chrom_pos, ymin=-10, ymax=150, linestyle=":")
+    ax.set_xticks(x_labels_pos)
+    ax.set_xticklabels(x_labels)
+    ax.set_xlabel("Chromosome")
+    plt.savefig(f"{outputPrefix}.SNP_density.pdf")
+
+
+if plot_type == 2:
+    fig, ax = plt.subplots(figsize=(24, 4))
+    ax2 = ax.twinx()
+    counter = 0
+    for chr in chrom_ids:
+        df2 = df.loc[df["CHROM"] == chr]
+        df2.plot(
+            x="IDX",
+            y="NORM_SNP_COUNT",
+            kind="scatter",
+            color=["blue", "black"][(counter % 2)],
+            ax=ax,
+            s=2,
+        )
+        counter = counter + 1
+
+    df.plot(
+        x="IDX",
+        y="COVERAGE",
+        kind="line",
+        color="green",
+        alpha=0.3,
+        ax=ax2,
+        legend=None,
     )
-    ax.axvline(group["ind"].iloc[-1] + 0.5, color="lightgray", ls=":", lw=1)
-    num = num + 1
+    ax.set_xmargin(0)
+    ax.set_ymargin(1)
+    ax.set_ylabel(f"{prefix}\nNorm. SNP Density / 10kb")
+    ax.set_ylim(0, y_max)
+    ax2.set_ylabel("Mean Read Depth / 10kb")
+    ax2.set_ylim(0, 200)
+    ax.vlines(chrom_pos, ymin=-10, ymax=150, linestyle=":")
+    ax.set_xticks(x_labels_pos)
+    ax.set_xticklabels(x_labels)
+    ax.set_xlabel("Chromosome")
+    plt.savefig(f"{outputPrefix}.SNP_density.pdf")
 
-ax.set_xticks(x_labels_pos)
-ax.set_xticklabels(x_labels)
 
-# set axis limits
-ax.set_xlim([0, len(df)])
-ax.set_ylim([y_min, y_max])
+if plot_type == 3:
+    fig, ax = plt.subplots(figsize=(24, 4))
+    ax2 = ax.twinx()
+    counter = 0
+    for chr in chrom_ids:
+        df2 = df.loc[df["CHROM"] == chr]
+        df2.plot(
+            x="IDX",
+            y="SNP_COUNT",
+            kind="scatter",
+            color=["blue", "black"][(counter % 2)],
+            ax=ax,
+            s=2,
+        )
+        counter = counter + 1
 
-# axis label
-ax.set_xlabel("Chromosome")
-ax.set_ylabel(f"{prefix}\nSNPs/10 kb blocks")
+    df.plot(
+        x="IDX",
+        y="WINDOW_COV",
+        kind="line",
+        color="grey",
+        alpha=0.3,
+        ax=ax2,
+        legend=None,
+    )
+    ax.set_xmargin(0)
+    ax.set_ymargin(1)
+    ax.set_ylabel(f"{prefix}\nSNP Density / 10kb")
+    ax.set_ylim(0, y_max)
+    ax2.set_ylabel("Read Coverage / 10kb (%)")
+    ax2.set_ylim(0, 110)
+    ax.vlines(chrom_pos, ymin=-10, ymax=150, linestyle=":")
+    ax.set_xticks(x_labels_pos)
+    ax.set_xticklabels(x_labels)
+    ax.set_xlabel("Chromosome")
+    plt.savefig(f"{outputPrefix}.SNP_density.pdf")
 
-# show the graph
-# plt.show()
+if plot_type == 4:
+    y_median_list = list()
+    fig, ax = plt.subplots(figsize=(24, 4),)
+    fig.subplots_adjust(right=0.75)
+    ax2 = ax.twinx()
+    ax3 = ax.twinx()
+    counter = 0
+    for chr in chrom_ids:
+        df2 = df.loc[df["CHROM"] == chr]
+        df3 = df2.loc[df2["SNP_COUNT"] > -1]
+        y_median = df3["SNP_COUNT"].median()
+        y_median_list.append(y_median)
+        print(f"Median SNP density for chr {chr} = {y_median}")
+        df2.plot(
+            x="IDX",
+            y="SNP_COUNT",
+            kind="scatter",
+            color=["blue", "black"][(counter % 2)],
+            ax=ax,
+            s=2,
+        )
+        counter = counter + 1
+        if df3.index.size > 0:
+            ax.hlines(
+                y_median,
+                xmin=min(df2.index),
+                xmax=max(df2.index),
+                linestyle="--",
+                alpha=0.7,
+                color="red",
+            )
 
-plt.savefig(f"{outputPrefix}.SNP_density.pdf")
+    df.plot(
+        x="IDX",
+        y="WINDOW_COV",
+        kind="line",
+        color="grey",
+        alpha=0.3,
+        ax=ax2,
+        legend=None,
+    )
+    df.plot(
+        x="IDX",
+        y="COVERAGE",
+        kind="line",
+        color="green",
+        alpha=0.3,
+        ax=ax3,
+        legend=None,
+    )
+    ax3.spines["right"].set_position(("axes", 1.05))
+    ax.set_xmargin(0)
+    # ax.set_ymargin(20)
+    ax.set_ylabel(f"{prefix}\nSNP Density / 10kb")
+    if max(y_median_list) > 35:
+        y_max = 700
+    ax.set_ylim(-0.3, y_max)
+    ax2.set_ylabel("Read Coverage / 10kb (%)", color="grey")
+    ax2.set_ylim(0, 110)
+    ax2.set_xmargin(0)
+    ax3.set_ylabel("Read Depth / 10kb", color="green")
+    ax3.set_ylim(0, max(df["COVERAGE"] + 10))
+    ax3.set_xmargin(0)
+    ax.vlines(chrom_pos, ymin=-5, ymax=y_max, linestyle=":")
+    ax.set_xticks(x_labels_pos)
+    ax.set_xticklabels(x_labels)
+    ax.set_xlabel("Chromosome")
+    plt.savefig(f"{outputPrefix}.SNP_density.pdf")
 
