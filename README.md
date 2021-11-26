@@ -21,8 +21,8 @@ optional arguments:
   -o OUTPUT_PREFIX, --output_prefix OUTPUT_PREFIX
                         output prefix
   -p PLOT_TYPE, --plot_type PLOT_TYPE
-                        Plot type [1: snp_density+read-depth; 2: norm_snp_density+read-depth; 3: snp_density+read_coverage; 4: snp_density+read-
-                        depth+read_coverage+median_snp_density_line]
+                        Plot type [1: snp_density+read-depth; 2: norm_snp_density+read-depth; 3: snp_density+read_coverage; 4: Norm_snp_density+read-
+                        depth+read_coverage+median_snp_density_line_per_chr]
 ```
 
 Example command:
