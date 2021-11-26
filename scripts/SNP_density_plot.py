@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 import argparse
+import re
 
 
 # Process parameters
@@ -47,10 +48,10 @@ plot_type = args.plot_type
 # Read snpden file
 df = pd.read_csv(input_file, sep="\t")
 prefix = str(input_file).replace(".snpden", "")
-prefix = prefix.replace("../", "")
+prefix = re.sub(r".*/", "", prefix)
 df["IDX"] = df.index
 
-
+# Set X-label coordinates
 chrom_ids = sorted(set(df["CHROM"]))
 chrom_pos = []
 x_labels = []
@@ -68,6 +69,10 @@ if df["SNP_COUNT"].median() < 35:
     y_max = 35  # df["SNP_COUNT"].median() + (3 * df["SNP_COUNT"].std())
 else:
     y_max = 700  # df["SNP_COUNT"].max() + 10
+
+########
+# Plots
+########
 
 if plot_type == 1:
     fig, ax = plt.subplots(figsize=(24, 5))
@@ -87,7 +92,7 @@ if plot_type == 1:
 
     df.plot(
         x="IDX",
-        y="COVERAGE",
+        y="DEPTH_MEAN",
         kind="line",
         color="green",
         alpha=0.3,
@@ -125,7 +130,7 @@ if plot_type == 2:
 
     df.plot(
         x="IDX",
-        y="COVERAGE",
+        y="DEPTH_MEAN",
         kind="line",
         color="green",
         alpha=0.3,
@@ -188,33 +193,51 @@ if plot_type == 4:
     fig.subplots_adjust(right=0.75)
     ax2 = ax.twinx()
     ax3 = ax.twinx()
-    counter = 0
+    counter = 0  # counter will set the color of dots in the scatter plot below
+    # Replace DEPTH_MEAN (read depth) values >= 50 with 50, so we can expand the bottom part of the read depth axis
+    # df.loc[df["DEPTH_MEAN"] > 49, "DEPTH_MEAN"] = 50
+    df["DEPTH_MEAN"] = [50 if depth > 49 else depth for depth in df["DEPTH_MEAN"]]
+    # df["DEPTH_MEAN"].loc[df["DEPTH_MEAN"] > 49] = 50
+
     for chr in chrom_ids:
-        df2 = df.loc[df["CHROM"] == chr]
-        df3 = df2.loc[df2["SNP_COUNT"] > -1]
-        y_median = df3["SNP_COUNT"].median()
-        y_median_list.append(y_median)
-        print(f"Median SNP density for chr {chr} = {y_median}")
-        df2.plot(
+        df2 = df.loc[df["CHROM"] == chr]  # Select rows by chromosome
+        df3 = df2.loc[
+            df2["SNP_COUNT"] > -1
+        ]  # Select rows with SNP count >= 0 (regions with read info available)
+        y_median = df3[
+            "SNP_COUNT"
+        ].median()  # Calculate median SNP count per chromosome, ignoring regions without read info
+        norm_snp_counts_across_chr_per_10kb = (
+            df3["SNP_COUNT"].sum() * 10000 / ((df3["WINDOW_COV"].sum() / 100) * 10000)
+        )  # Calculate median SNP count per chromosome, ignoring regions without read info
+
+        y_median_list.append(norm_snp_counts_across_chr_per_10kb)
+
+        # print(f"Median SNP density for chr {chr} = {y_median}")
+
+        df2.plot(  # Plot SNP density per 10 kb
             x="IDX",
-            y="SNP_COUNT",
+            y="NORM_SNP_COUNT",
             kind="scatter",
             color=["blue", "black"][(counter % 2)],
             ax=ax,
             s=2,
         )
-        counter = counter + 1
-        if df3.index.size > 0:
+        if (
+            df3.index.size > 0
+        ):  # Plot horizontal line based on median SNP density / chromosome
             ax.hlines(
-                y_median,
+                norm_snp_counts_across_chr_per_10kb,
                 xmin=min(df2.index),
                 xmax=max(df2.index),
-                linestyle="--",
-                alpha=0.7,
+                linestyle=(0, (5, 5)),
+                alpha=0.5,
                 color="red",
             )
 
-    df.plot(
+        counter = counter + 1
+
+    df.plot(  # Plot read coverage percent
         x="IDX",
         y="WINDOW_COV",
         kind="line",
@@ -223,31 +246,38 @@ if plot_type == 4:
         ax=ax2,
         legend=None,
     )
-    df.plot(
+    df.plot(  # Plot read depth / 10 kb
         x="IDX",
-        y="COVERAGE",
+        y="DEPTH_MEAN",
         kind="line",
         color="green",
         alpha=0.3,
         ax=ax3,
         legend=None,
     )
-    ax3.spines["right"].set_position(("axes", 1.05))
+
+    # Set ranges for X and Y axes
+    ax3.spines["right"].set_position(
+        ("axes", 1.05)
+    )  # Set shift of 3rd y-axis (Read depth / 10 kb)
     ax.set_xmargin(0)
-    # ax.set_ymargin(20)
-    ax.set_ylabel(f"{prefix}\nSNP Density / 10kb")
+    ax.set_ylabel(f"{prefix}\nNormalized SNP Density / 10kb")
     if max(y_median_list) > 35:
         y_max = 700
     ax.set_ylim(-0.3, y_max)
-    ax2.set_ylabel("Read Coverage / 10kb (%)", color="grey")
-    ax2.set_ylim(0, 110)
-    ax2.set_xmargin(0)
-    ax3.set_ylabel("Read Depth / 10kb", color="green")
-    ax3.set_ylim(0, max(df["COVERAGE"] + 10))
-    ax3.set_xmargin(0)
     ax.vlines(chrom_pos, ymin=-5, ymax=y_max, linestyle=":")
     ax.set_xticks(x_labels_pos)
     ax.set_xticklabels(x_labels)
     ax.set_xlabel("Chromosome")
+
+    ax2.set_ylabel("Read Coverage / 10kb (%)", color="grey")
+    ax2.set_ylim(0, 110)
+    ax2.set_xmargin(0)
+
+    ax3.set_ylabel("Read Depth / 10kb", color="green")
+    ax3.set_ylim(0, 52)  # max(df["DEPTH_MEAN"] + 10))
+    ax3.set_xmargin(0)
+
+    # Save plot as PDF
     plt.savefig(f"{outputPrefix}.SNP_density.pdf")
 
