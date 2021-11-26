@@ -54,5 +54,5 @@ Example command:
 ```
 perl ../scripts/extract_SNP_info_from_vcf_and_depth.pl -b 10000 \
   -d C2_cat.realigned.bam.depth \
-  -v NEW_REF_filtered_snps.PASS.C2_cat.FILTER.vcf > C2_cat.snpden
+  -v C2_cat.vcf > C2_cat.snpden
 ```
