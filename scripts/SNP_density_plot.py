@@ -207,9 +207,15 @@ if plot_type == 4:
         y_median = df3[
             "SNP_COUNT"
         ].median()  # Calculate median SNP count per chromosome, ignoring regions without read info
+<<<<<<< HEAD
+        norm_snp_counts_across_chr_per_10kb = df3[
+            "NORM_SNP_COUNT"
+        ].median()  # Calculate median SNP count per chromosome, ignoring regions without read info
+=======
         norm_snp_counts_across_chr_per_10kb = (
             df3["SNP_COUNT"].sum() * 10000 / ((df3["WINDOW_COV"].sum() / 100) * 10000)
         )  # Calculate median SNP count per chromosome, ignoring regions without read info
+>>>>>>> 1f91dc873e3f42d7e22c1cccdbbe1535717d7841
 
         y_median_list.append(norm_snp_counts_across_chr_per_10kb)
 
